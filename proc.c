@@ -6,6 +6,9 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "pstat.h"
+
+#define RAND_MAX ((1U << 31) - 1)
 
 struct {
   struct spinlock lock;
@@ -138,7 +141,8 @@ userinit(void)
   p->tf->eflags = FL_IF;
   p->tf->esp = PGSIZE;
   p->tf->eip = 0;  // beginning of initcode.S
-
+  p->tickets = 10;
+  p->ticks = 0;
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
@@ -211,6 +215,12 @@ fork(void)
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
   pid = np->pid;
+  
+  np->ticks = 0;
+  if(curproc->tickets > 10)
+      np->tickets = curproc->tickets;
+  else
+      np->tickets = 10;
 
   acquire(&ptable.lock);
 
@@ -311,6 +321,14 @@ wait(void)
   }
 }
 
+static int rseed = 1898888478;
+int random()
+{
+  return rseed = (rseed * 1103515245 + 12345) & RAND_MAX;
+}
+
+
+
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -327,15 +345,45 @@ scheduler(void)
   c->proc = 0;
   
   for(;;){
+
     // Enable interrupts on this processor.
     sti();
+    int runnableTickets = 0;
+    int randomNum;
+    int counter = 0;
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
+      runnableTickets += p->tickets;
+    } 
+    release(&ptable.lock);
+    
+    if(runnableTickets <= 0)
+        continue;
 
+    randomNum = random();
+    int winner = randomNum % runnableTickets;
+    
+    acquire(&ptable.lock);
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    {
+      counter = counter + p->tickets;
+      if(counter > winner)
+      {
+        c->proc = p;
+        switchuvm(p);
+        p->state = RUNNING;
+        p->ticks += 1;
+        swtch(&(c->scheduler), p->context);
+        switchkvm();
+        c->proc = 0;
+      }
+    }
+    release(&ptable.lock);
+      /*
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
@@ -343,14 +391,13 @@ scheduler(void)
       switchuvm(p);
       p->state = RUNNING;
 
-      swtch(&(c->scheduler), p->context);
+      swtch(&(c->scheduler), p->context); 
       switchkvm();
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       c->proc = 0;
-    }
-    release(&ptable.lock);
+      */
 
   }
 }
@@ -531,4 +578,40 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+extern void fillpstat(pstatTable* pstat);
+void fillpstat(pstatTable * pstat)
+{
+  struct proc *p;
+  int i/*,j*/ = 0;
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  {
+    if(p->state == UNUSED)
+      (*pstat)[i].inuse = 0;
+    else
+    {
+      (*pstat)[i].inuse = 1;
+      (*pstat)[i].tickets = p->tickets;
+      (*pstat)[i].pid = p->pid;
+      (*pstat)[i].ticks = p->ticks;
+      /*
+      for(j = 0; p->name[j] != '\0'; j++)
+        cprintf("p->name[j]: %c", p->name[j]);
+      */
+      (*pstat)[i].name[0] = p->name[0];
+      if(p->state == EMBRYO)
+        (*pstat)[i].state = 'E';
+      if(p->state == SLEEPING)
+        (*pstat)[i].state = 'S'; 
+      if(p->state == RUNNABLE)
+        (*pstat)[i].state = 'A';
+      if(p->state == RUNNING)
+        (*pstat)[i].state = 'R';
+      if(p->state == ZOMBIE)
+        (*pstat)[i].state = 'Z';
+    }
+    i++;  
+  }
+  release(&ptable.lock);
 }
