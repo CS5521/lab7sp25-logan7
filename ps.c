@@ -6,5 +6,4 @@ main(int argc, char * argv[])
 {
     ps();
     exit();
-    return 0;
 }

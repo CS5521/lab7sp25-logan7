@@ -371,6 +371,8 @@ scheduler(void)
     
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     {
+      if(p->state != RUNNABLE)
+          continue;
       counter = counter + p->tickets;
       if(counter > winner)
       {
@@ -569,7 +571,7 @@ extern void fillpstat(pstatTable* pstat);
 void fillpstat(pstatTable * pstat)
 {
   struct proc *p;
-  int i/*,j*/ = 0;
+  int i,j = 0;
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
   {
@@ -581,11 +583,10 @@ void fillpstat(pstatTable * pstat)
       (*pstat)[i].tickets = p->tickets;
       (*pstat)[i].pid = p->pid;
       (*pstat)[i].ticks = p->ticks;
-      /*
-      for(j = 0; p->name[j] != '\0'; j++)
-        cprintf("p->name[j]: %c", p->name[j]);
-      */
-      (*pstat)[i].name[0] = p->name[0];
+      
+      for(j = 0; j < 16; j++)
+         (*pstat)[i].name[j] = p->name[j];
+   //   (*pstat)[i].name[0] = p->name[0];
       if(p->state == EMBRYO)
         (*pstat)[i].state = 'E';
       if(p->state == SLEEPING)
