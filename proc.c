@@ -571,7 +571,8 @@ extern void fillpstat(pstatTable* pstat);
 void fillpstat(pstatTable * pstat)
 {
   struct proc *p;
-  int i,j = 0;
+  int i = 0;
+  int j = 0;
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
   {
