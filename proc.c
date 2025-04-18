@@ -361,8 +361,10 @@ scheduler(void)
     } 
     
     if(runnableTickets <= 0)
+    {
         release(&ptable.lock);
         continue;
+    }
 
     randomNum = random();
     int winner = randomNum % runnableTickets;
